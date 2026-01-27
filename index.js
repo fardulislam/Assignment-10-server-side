@@ -25,11 +25,28 @@ const client = new MongoClient(uri, {
   },
 });
 
-const middleware = (req, res, next) => {
-  const authrization = req.headers.authrization;
-  const token = authrization.solit(" ")[1];
-  console.log(token);
-  next();
+const verifyfirebasetoken  = async (req, res, next) => {
+
+  console.log('authorization',req.headers.authorization)
+  if(!req.headers.authorization){
+    return res.status(401).send({message:'unauthorize access'})
+  }
+  const token = req.headers.authorization.split(' ')[1]
+  if(!token){
+    return res.status(401).send({message : 'unauthorize token'})
+  }
+  try{
+    const userinfo = await admin.auth().verifyIdToken(token)
+    req.token_email = userinfo.email;
+
+    console.log( 'after data comming',userinfo)
+    next()
+  }
+  catch{
+    return res.status(401).send({message : 'unauthorize token'})
+  }
+ 
+  
 };
 
 async function run() {
@@ -42,7 +59,7 @@ async function run() {
       const result = await carcollections.find().toArray();
       res.send(result);
     });
-    app.get(`/car-collection/:id`, async (req, res) => {
+    app.get(`/car-collection/:id`,  async (req, res) => {
       const id = req.params.id;
       const quary = { _id: new ObjectId(id) };
       const result = await carcollections.findOne(quary);
@@ -89,12 +106,16 @@ async function run() {
     });
     // my data //
 
-    app.get("/car", async (req, res) => {
+    app.get("/car",verifyfirebasetoken, async (req, res) => {
+      // console.log('headers',req.headers)
       try {
         const email = req.query.email;
         const query = {};
 
         if (email) {
+          if(email !== req.token_email){
+            return res.status(403).send({message:'forbiden access'})
+          }
           query.providerEmail = email;
         }
 
