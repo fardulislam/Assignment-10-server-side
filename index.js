@@ -1,7 +1,7 @@
 const express = require("express");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
-const serviceAccount = require("./servicekey.json");
+const serviceAccount = require("./firebase-service-admin.json");
 const app = express();
 require("dotenv").config();
 const cors = require("cors");
@@ -25,28 +25,24 @@ const client = new MongoClient(uri, {
   },
 });
 
-const verifyfirebasetoken  = async (req, res, next) => {
-
-  console.log('authorization',req.headers.authorization)
-  if(!req.headers.authorization){
-    return res.status(401).send({message:'unauthorize access'})
+const verifyfirebasetoken = async (req, res, next) => {
+  console.log("authorization", req.headers.authorization);
+  if (!req.headers.authorization) {
+    return res.status(401).send({ message: "unauthorize access" });
   }
-  const token = req.headers.authorization.split(' ')[1]
-  if(!token){
-    return res.status(401).send({message : 'unauthorize token'})
+  const token = req.headers.authorization.split(" ")[1];
+  if (!token) {
+    return res.status(401).send({ message: "unauthorize token" });
   }
-  try{
-    const userinfo = await admin.auth().verifyIdToken(token)
+  try {
+    const userinfo = await admin.auth().verifyIdToken(token);
     req.token_email = userinfo.email;
 
-    console.log( 'after data comming',userinfo)
-    next()
+    console.log("after data comming", userinfo);
+    next();
+  } catch {
+    return res.status(401).send({ message: "unauthorize token" });
   }
-  catch{
-    return res.status(401).send({message : 'unauthorize token'})
-  }
- 
-  
 };
 
 async function run() {
@@ -54,12 +50,13 @@ async function run() {
     await client.connect();
     const db = client.db("carmodeldb");
     const carcollections = db.collection("car-collection");
+    const bookingcollaction = db.collection("booking-car");
     // get//
     app.get("/car-collection", async (req, res) => {
       const result = await carcollections.find().toArray();
       res.send(result);
     });
-    app.get(`/car-collection/:id`,  async (req, res) => {
+    app.get(`/car-collection/:id`, async (req, res) => {
       const id = req.params.id;
       const quary = { _id: new ObjectId(id) };
       const result = await carcollections.findOne(quary);
@@ -106,15 +103,15 @@ async function run() {
     });
     // my data //
 
-    app.get("/car",verifyfirebasetoken, async (req, res) => {
+    app.get("/car", verifyfirebasetoken, async (req, res) => {
       // console.log('headers',req.headers)
       try {
         const email = req.query.email;
         const query = {};
 
         if (email) {
-          if(email !== req.token_email){
-            return res.status(403).send({message:'forbiden access'})
+          if (email !== req.token_email) {
+            return res.status(403).send({ message: "forbiden access" });
           }
           query.providerEmail = email;
         }
@@ -134,6 +131,41 @@ async function run() {
       const result = await carcollections.deleteOne(quary);
       res.send(result);
     });
+
+    // booking car //
+
+    app.get("/booking-car",verifyfirebasetoken,  async (req, res) => {
+      const email = req.query.email;
+      if (email !== req.token_email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      const result = await bookingcollaction
+        .find({ userEmail: email })
+        .toArray();
+      res.send(result);
+    });
+
+    // booking car post //
+
+    app.post("/booking-car", async (req, res) => {
+      const booking = req.body;
+      const result = await bookingcollaction.insertOne(booking);
+      await carcollections.updateOne(
+        { _id: new ObjectId(booking.carId) },
+        { $set: { status: "unavailable" } },
+      );
+
+      res.send(result);
+    });
+
+    // booking car delete //
+
+    app.delete("/booking-car/:id",async (req,res)=>{
+       const id = req.params.id;
+      const quary = { _id: new ObjectId(id) };
+      const result = await bookingcollaction.deleteOne(quary);
+      res.send(result);
+    })
 
     await client.db("admin").command({ ping: 1 });
     console.log(
